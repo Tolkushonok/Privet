@@ -1,15 +1,32 @@
-import sqlite3
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.orm import declarative_base
+from sqlalchemy import Column, BigInteger, select
+import os
+
+
+DATABASE_URL = "postgresql+asyncpg://postgres:58946@localhost:5432/postgres"
+
+engine = create_async_engine(DATABASE_URL, echo=True)
+async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
+Base = declarative_base()
+
+class User(Base):
+    __tablename__ = "users"
+    user_id = Column(BigInteger, primary_key=True)
 
 class Database:
-    def __init__(self, db_file):
-        self.connection = sqlite3.connect(db_file)
-        self.cursor = self.connection.cursor()
+    async def user_exists(self, user_id: int) -> bool:
+        async with async_session_maker() as session:
+            result = await session.execute(
+                select(User).where(User.user_id == user_id)
+            )
+            return result.scalar_one_or_none() is not None
 
-    def user_exists(self, user_id):
-        with self.connection:
-            result = self.cursor.execute("SELECT * FROM 'users' WHERE 'use_id = ?", (user_id,)).fetchmany(1)
-            return bool(len(result))
+    async def add_user(self, user_id: int):
+        async with async_session_maker() as session:
+            session.add(User(user_id=user_id))
+            await session.commit()
 
-    def add_user(self, user_id):
-        with self.connection:
-            return  self.cursor.execute("INSERT INTO 'users' ('user_id') VALUES (?)", (user_id,))
+    async def create_tables(self):
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
